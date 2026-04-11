@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CRUD App</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        input, button { padding: 8px; margin: 5px; }
+        li { margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+<h1>CRUD App</h1>
+
+<input type="text" id="itemInput" placeholder="Enter item name">
+<button onclick="addItem()">Add</button>
+
+<h2>Items</h2>
+<ul id="itemsList"></ul>
+
+<script>
+const API_URL = '/items';
+
+async function fetchItems() {
+    const res = await fetch(API_URL);
+    const items = await res.json();
+
+    const list = document.getElementById('itemsList');
+    list.innerHTML = '';
+
+    items.forEach(item => {
+        const li = document.createElement('li');
+
+        li.innerHTML = `
+            <input value="${item.name}" id="input-${item.id}">
+            <button onclick="updateItem(${item.id})">Update</button>
+            <button onclick="deleteItem(${item.id})">Delete</button>
+        `;
+
+        list.appendChild(li);
+    });
+}
+
+async function addItem() {
+    const input = document.getElementById('itemInput');
+    const name = input.value;
+
+    await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+
+    input.value = '';
+    fetchItems();
+}
+
+async function updateItem(id) {
+    const input = document.getElementById(`input-${id}`);
+    const name = input.value;
+
+    await fetch(`${API_URL}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+
+    fetchItems();
+}
+
+async function deleteItem(id) {
+    await fetch(`${API_URL}/${id}`, {
+        method: 'DELETE'
+    });
+
+    fetchItems();
+}
+
+fetchItems();
+</script>
+
+</body>
+</html>

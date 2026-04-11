@@ -1,0 +1,22 @@
+{
+  "name": "crud-app",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.js",
+    "seed": "node seed.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18 <19"
+  },
+  "description": "",
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "body-parser": "^2.2.2",
+    "express": "^5.2.1"
+  }
+}
