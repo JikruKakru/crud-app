@@ -18,7 +18,9 @@ The project was made for benchmarking and comparing Virtual Machines and LXC con
 `git clone https://github.com/JikruKakru/crud-app`
 
 `cd crud-app`
-### 2. Install Node.js with nvm
+### 2. Install NVM (Node Version Manager)
+`curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash`
+### 3. Install Node.js with nvm
 `nvm install`
 
 `nvm use`
@@ -28,11 +30,11 @@ Verify version:
 
 Should be:
 `v18.x.x`
-### 3. Install dependencies
+### 4. Install dependencies
 `npm install`
-### 4. Seed the database (optional)
+### 5. Seed the database (optional)
 `npm seed`
-### 5. Start the application
+### 6. Start the application
 `npm start`
 ## Usage
 Open your browser and navigate to:
