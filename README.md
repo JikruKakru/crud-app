@@ -33,10 +33,10 @@ Should be:
 `v18.x.x`
 ### 4. Install dependencies
 `npm install`
-### 5. Seed the database (optional)
-`npm seed`
-### 6. Start the application
-`npm start`
+### 5. Start the application
+`npm run start`
+### 6. Seed the database (optional)
+`npm run seed`
 ## Usage
 Open your browser and navigate to:
 `http://<your-ip>:3000`
