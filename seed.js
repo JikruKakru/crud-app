@@ -1,6 +1,5 @@
-const sqlite3 = require('sqlite3').verbose();
-
-const db = new sqlite3.Database('./database.db');
+const Database = require('better-sqlite3');
+const db = new Database('./database.db');
 
 const TOTAL = 1000; // number of rows
 
@@ -13,17 +12,13 @@ function randomString(length) {
     return result;
 }
 
-db.serialize(() => {
-    db.run("DELETE FROM items"); // clear table first
+db.prepare("DELETE FROM items").run(); // clear table first
 
-    const stmt = db.prepare("INSERT INTO items (name) VALUES (?)");
+const stmt = db.prepare("INSERT INTO items (name) VALUES (?)");
 
-    for (let i = 0; i < TOTAL; i++) {
-        stmt.run(randomString(20));
-    }
-
-    stmt.finalize();
-});
+for (let i = 0; i < TOTAL; i++) {
+    stmt.run(randomString(20));
+}
 
 db.close();
 
