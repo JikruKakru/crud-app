@@ -4,6 +4,7 @@ This project is a simple CRUD web application built using:
 * Node.js
 * Express.js
 * SQLite
+
 The project was made for benchmarking and comparing Virtual Machines and LXC containers in Proxmox.
 ## Requirements
 * Node.js v18.x
