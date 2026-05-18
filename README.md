@@ -100,11 +100,20 @@ curl -X POST http://localhost:3000/reset
 
 ## Benchmarking
 
-This project includes a comprehensive benchmarking script for performance testing.
+This project includes a benchmarking script for performance testing.
+
+### Python Dependencies
+The benchmark result aggregator, `aggregate_results.py`, uses `pandas`.
+
+Install Python tooling and the required dependency before running the aggregator:
+```bash
+sudo apt install python3 python3-pip
+python3 -m pip install -r requirements.txt
+```
 
 ### Prerequisites
 ```bash
-sudo apt install jq
+sudo apt install jq sysstat
 ```
 
 ```bash
