@@ -104,6 +104,10 @@ This project includes a comprehensive benchmarking script for performance testin
 
 ### Prerequisites
 ```bash
+sudo apt install jq
+```
+
+```bash
 npm install -g autocannon
 ```
 
