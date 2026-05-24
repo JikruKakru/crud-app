@@ -18,7 +18,7 @@ RESET_URL="http://${SERVER_IP}:3000/reset"
 BOOT_TIME=$(uptime -s 2>/dev/null || date)
 
 DURATION=30
-CONNECTIONS=50
+CONNECTIONS=100
 RUNS=5
 IDLE_SECONDS=5
 APP_PROC_PATTERN="node app.js"
@@ -53,17 +53,28 @@ assert_backend_ready() {
     fi
 }
 
-get_app_rss_kb() {
-    local pids rss_sum
+# -----------------------------
+# APP PID
+# -----------------------------
+get_app_pid() {
+    # Find node process by exact name match to avoid shell wrappers
+    pgrep "^node$" | tail -n 1
+}
 
-    pids=$(pgrep -f "$APP_PROC_PATTERN" 2>/dev/null)
-    if [ -z "$pids" ]; then
+# -----------------------------
+# APP RSS
+# -----------------------------
+get_app_rss_kb() {
+    local pid
+
+    pid=$(get_app_pid)
+
+    if [ -z "$pid" ]; then
         echo 0
         return
     fi
 
-    rss_sum=$(ps -o rss= -p $pids 2>/dev/null | awk '{sum += $1} END {print sum + 0}')
-    echo "$rss_sum"
+    ps -o rss= -p "$pid" 2>/dev/null | awk '{print $1+0}'
 }
 
 # -----------------------------
@@ -75,7 +86,7 @@ assert_backend_ready
 autocannon -c 10 -d 10 "$BASE_URL" > /dev/null
 
 # -----------------------------
-# FUNCTION: RUN TEST
+# RUN TEST FUNCTION
 # -----------------------------
 run_test() {
     TEST_NAME=$1
@@ -91,27 +102,30 @@ run_test() {
     for i in $(seq 1 $RUNS); do
         echo "  Run $i..."
 
-        # ✅ Reset BEFORE EACH RUN
         reset_db
         assert_backend_ready
 
         RUN_DIR="$TEST_DIR/run_$i"
         mkdir -p "$RUN_DIR"
 
-        TOTAL_RAM=$(free -k | awk '/^Mem:/ {print $2}')
+        APP_PID=$(get_app_pid)
+
+        if [ -z "$APP_PID" ]; then
+            echo "Could not find app PID."
+            exit 1
+        fi
 
         # -----------------------------
-        # IDLE BASELINE SNAPSHOT
+        # IDLE BASELINE
         # -----------------------------
-        vmstat 1 > "$RUN_DIR/idle_vmstat.txt" &
-        IDLE_VMSTAT_PID=$!
+        pidstat -u -p "$APP_PID" 1 > "$RUN_DIR/idle_pidstat_cpu.txt" &
+        IDLE_CPU_PID=$!
 
         (
             while true; do
-                if ! kill -0 $IDLE_VMSTAT_PID 2>/dev/null || [ ! -d "$RUN_DIR" ]; then
+                if ! kill -0 $IDLE_CPU_PID 2>/dev/null; then
                     break
                 fi
-                free -k | awk '/^Mem:/ {print $7}' >> "$RUN_DIR/idle_available_mem.log"
                 get_app_rss_kb >> "$RUN_DIR/idle_app_mem.log"
                 sleep 1
             done
@@ -120,7 +134,7 @@ run_test() {
 
         sleep "$IDLE_SECONDS"
 
-        kill $IDLE_VMSTAT_PID 2>/dev/null
+        kill $IDLE_CPU_PID 2>/dev/null
         kill $IDLE_MEM_PID 2>/dev/null
 
         sleep 1
@@ -128,18 +142,17 @@ run_test() {
         # -----------------------------
         # START MONITORING
         # -----------------------------
-        vmstat 1 > "$RUN_DIR/vmstat.txt" &
-        VMSTAT_PID=$!
+        pidstat -u -p "$APP_PID" 1 > "$RUN_DIR/pidstat_cpu.txt" &
+        CPU_PID=$!
 
-        iostat -x 1 > "$RUN_DIR/iostat.txt" &
-        IOSTAT_PID=$!
+        pidstat -d -p "$APP_PID" 1 > "$RUN_DIR/pidstat_disk.txt" &
+        DISK_PID=$!
 
         (
             while true; do
-                if ! kill -0 $VMSTAT_PID 2>/dev/null || [ ! -d "$RUN_DIR" ]; then
+                if ! kill -0 $CPU_PID 2>/dev/null; then
                     break
                 fi
-                free -k | awk '/^Mem:/ {print $7}' >> "$RUN_DIR/available_mem.log"
                 get_app_rss_kb >> "$RUN_DIR/app_mem.log"
                 sleep 1
             done
@@ -156,12 +169,12 @@ run_test() {
 
         elif [ -z "$BODY" ]; then
             autocannon -c $CONNECTIONS -d $DURATION \
-                -m $METHOD \
+                -m "$METHOD" \
                 -j "$URL" > "$RUN_DIR/load.json"
 
         else
             autocannon -c $CONNECTIONS -d $DURATION \
-                -m $METHOD \
+                -m "$METHOD" \
                 -H "Content-Type: application/json" \
                 -b "$BODY" \
                 -j "$URL" > "$RUN_DIR/load.json"
@@ -170,8 +183,8 @@ run_test() {
         # -----------------------------
         # STOP MONITORING
         # -----------------------------
-        kill $VMSTAT_PID 2>/dev/null
-        kill $IOSTAT_PID 2>/dev/null
+        kill $CPU_PID 2>/dev/null
+        kill $DISK_PID 2>/dev/null
         kill $MEM_PID 2>/dev/null
 
         sleep 1
@@ -187,85 +200,79 @@ run_test() {
             echo "Boot time: $BOOT_TIME"
 
             if [ -f "$RUN_DIR/load.json" ]; then
-                jq -r '"Req/sec: \(.requests.average) | Latency avg: \(.latency.average) ms | Latency p97.5: \((.latency.p97_5 // .latency.p99 // .latency.p90 // .latency.max // 0)) ms | Latency p99: \((.latency.p99 // .latency.max // 0)) ms | Max: \(.latency.max) ms"' "$RUN_DIR/load.json"
+                jq -r '
+                    "Req/sec: \(.requests.average)",
+                    "Latency avg: \(.latency.average) ms",
+                    "Latency p97.5: \((.latency.p97_5 // .latency.p99 // 0)) ms",
+                    "Latency p99: \((.latency.p99 // 0)) ms",
+                    "Max latency: \(.latency.max) ms"
+                ' "$RUN_DIR/load.json"
             fi
 
-            awk 'NR > 2 && $15 ~ /^[0-9]+$/ {
-                usage = 100 - $15;
-                sum += usage;
-                if (usage > max) max = usage;
-                count++
-            }
-            END {
-                if (count > 0)
-                    printf "Avg CPU: %.2f%% | Peak CPU: %.2f%%\n", sum/count, max
-            }' "$RUN_DIR/vmstat.txt"
+            echo ""
 
-            awk -v total="$TOTAL_RAM" '{
-                used = (total - $1)/1024;
-                sum += used;
-                if (used > max) max = used;
-                count++
-            }
-            END {
-                if (count > 0)
-                    printf "Avg RAM: %.2f MB | Peak RAM: %.2f MB\n", sum/count, max
-            }' "$RUN_DIR/available_mem.log"
-
-            awk '{
-                used = $1 / 1024;
-                sum += used;
-                if (used > max) max = used;
-                count++
-            }
-            END {
-                if (count > 0)
-                    printf "App RAM: %.2f MB | App peak RAM: %.2f MB\n", sum/count, max
-            }' "$RUN_DIR/app_mem.log"
-
-            awk 'NR > 2 && $15 ~ /^[0-9]+$/ {
-                idle += $15;
-                count++
-            }
-            END {
-                if (count > 0)
-                    printf "Idle CPU: %.2f%%\n", idle/count
-            }' "$RUN_DIR/idle_vmstat.txt"
-
-            awk '{
-                available = $1 / 1024;
-                sum += available;
-                count++
-            }
-            END {
-                if (count > 0)
-                    printf "Idle RAM: %.2f MB\n", sum/count
-            }' "$RUN_DIR/idle_available_mem.log"
-
-            awk '{
-                used = $1 / 1024;
-                sum += used;
-                count++
-            }
-            END {
-                if (count > 0)
-                    printf "Idle App RAM: %.2f MB\n", sum/count
-            }' "$RUN_DIR/idle_app_mem.log"
-
+            echo "CPU (App only)"
             awk '
-                $1 !~ /^(Linux|avg-cpu:|Device|loop|sr)/ && $NF ~ /^[0-9.]+$/ {
-                    util = $NF + 0;
-                    sum += util;
-                    if (util > max) max = util;
-                    count++;
+                $5 ~ /^[0-9.]+$/ && $6 ~ /^[0-9.]+$/ {
+                    cpu=$5+$6
+                    sum+=cpu
+                    if(cpu>max) max=cpu
+                    count++
                 }
                 END {
-                    if (count > 0)
-                        printf "Disk util: %.2f%% | Disk peak util: %.2f%%\n", sum/count, max;
-                }' "$RUN_DIR/iostat.txt"
+                    if(count>0)
+                        printf "Avg CPU: %.2f%%\nPeak CPU: %.2f%%\n", sum/count, max
+                }
+            ' "$RUN_DIR/pidstat_cpu.txt"
+
+            echo ""
+
+            echo "Memory (App RSS)"
+            awk '
+                {
+                    mem=$1/1024
+                    sum+=mem
+                    if(mem>max) max=mem
+                    count++
+                }
+                END {
+                    if(count>0)
+                        printf "Avg RAM: %.2f MB\nPeak RAM: %.2f MB\n", sum/count, max
+                }
+            ' "$RUN_DIR/app_mem.log"
+
+            echo ""
+
+            echo "Idle App RAM"
+            awk '
+                {
+                    mem=$1/1024
+                    sum+=mem
+                    count++
+                }
+                END {
+                    if(count>0)
+                        printf "Idle RAM: %.2f MB\n", sum/count
+                }
+            ' "$RUN_DIR/idle_app_mem.log"
+
+            echo ""
+
+            echo "Disk I/O (App only)"
+            awk '
+                $4 ~ /^[0-9.]+$/ && $5 ~ /^[0-9.]+$/ {
+                    read+=$4
+                    write+=$5
+                    count++
+                }
+                END {
+                    if(count>0)
+                        printf "Avg Read: %.2f KB/s\nAvg Write: %.2f KB/s\n",
+                            read/count, write/count
+                }
+            ' "$RUN_DIR/pidstat_disk.txt"
 
         } > "$SUMMARY"
-
     done
 }
 
@@ -274,11 +281,8 @@ run_test() {
 # -----------------------------
 run_test "CREATE" "POST" "$BASE_URL" '{"name":"test"}'
 run_test "READ"   "GET"  "$BASE_URL" ""
-
-# dynamic IDs still fine
-ITEM_ID=1
-run_test "UPDATE" "PUT" "$BASE_URL/$ITEM_ID" '{"name":"updated"}'
-run_test "DELETE" "DELETE" "$BASE_URL/$ITEM_ID" ""
+run_test "UPDATE" "PUT"  "$BASE_URL/1" '{"name":"updated"}'
+run_test "DELETE" "DELETE" "$BASE_URL/1" ""
 
 echo "========================================"
 echo " Benchmark complete!"

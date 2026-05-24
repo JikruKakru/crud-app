@@ -126,13 +126,14 @@ npm install -g autocannon
 ```
 
 The script will:
-* Run 5 iterations (configurable via `RUNS` variable)
+* Run 4 iterations by default (configurable via `RUNS` variable)
 * Test CREATE, READ, UPDATE, DELETE operations
 * Collect metrics:
   - **Requests/sec:** Throughput (requests per second)
   - **Latency:** Response time (average, p97.5, p99, max)
-  - **CPU:** Average and peak CPU usage
-  - **RAM:** Average and peak memory usage
+  - **CPU:** App process average and peak CPU usage
+  - **RAM:** App process average and peak RSS memory usage
+  - **Disk I/O:** App process read/write KB/s
 * Save results to `benchmark_results_YYYYMMDD_HHMMSS/`
 
 ### Output
@@ -142,6 +143,6 @@ Each test operation (CREATE, READ, UPDATE, DELETE) generates:
 * `std_dev.csv` - Standard deviation across runs
 * Individual run directories with detailed metrics:
   - `load.json` - Raw autocannon output
-  - `vmstat.txt` - CPU and memory statistics
-  - `iostat.txt` - I/O statistics
+  - `pidstat_cpu.txt` - App CPU statistics
+  - `pidstat_disk.txt` - App disk statistics
   - `summary.txt` - Human-readable summary

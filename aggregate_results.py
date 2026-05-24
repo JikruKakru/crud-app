@@ -77,14 +77,11 @@ ROOT_DIR = choose_benchmark_dir(discover_benchmark_dirs(BASE_DIR))
 
 results = []
 
-def segment_value(segment):
-    return segment.split(":", 1)[1].strip()
-
-
 def parse_optional_float(value):
     cleaned = (
         value.replace(" ms", "")
         .replace(" MB", "")
+        .replace(" KB/s", "")
         .replace("%", "")
         .strip()
     )
@@ -98,51 +95,50 @@ def parse_summary(summary_path):
 
     with open(summary_path) as f:
         for line in f:
+            line = line.strip()
+            
+            if not line or line.startswith("---") or line.endswith("only"):
+                # Skip empty lines, separators, and section headers
+                continue
+
             if line.startswith("Boot time:"):
-                data["boot_time"] = line.split("Boot time:", 1)[1].strip()
+                data["boot_time"] = line.split(":", 1)[1].strip()
 
-            if "Req/sec" in line:
-                parts = [part.strip() for part in line.strip().split("|")]
-                data["req_sec"] = parse_optional_float(segment_value(parts[0]))
-                data["lat_avg"] = parse_optional_float(segment_value(parts[1]))
+            elif line.startswith("Req/sec:"):
+                data["req_sec"] = parse_optional_float(line.split(":", 1)[1])
 
-                if len(parts) > 3:
-                    data["lat_p97_5"] = parse_optional_float(segment_value(parts[2]))
-                    data["lat_p99"] = parse_optional_float(segment_value(parts[3]))
-                    data["lat_max"] = parse_optional_float(segment_value(parts[4]))
-                else:
-                    data["lat_max"] = parse_optional_float(segment_value(parts[2]))
+            elif line.startswith("Latency avg:"):
+                data["lat_avg"] = parse_optional_float(line.split(":", 1)[1])
 
-            elif "Avg CPU" in line:
-                parts = [part.strip() for part in line.strip().split("|")]
-                data["cpu_avg"] = parse_optional_float(segment_value(parts[0]))
-                data["cpu_peak"] = parse_optional_float(segment_value(parts[1]))
+            elif line.startswith("Latency p97.5:"):
+                data["lat_p97_5"] = parse_optional_float(line.split(":", 1)[1])
 
-            elif "Avg RAM" in line:
-                parts = [part.strip() for part in line.strip().split("|")]
-                data["ram_avg"] = parse_optional_float(segment_value(parts[0]))
-                data["ram_peak"] = parse_optional_float(segment_value(parts[1]))
+            elif line.startswith("Latency p99:"):
+                data["lat_p99"] = parse_optional_float(line.split(":", 1)[1])
 
-            elif "App RAM" in line:
-                parts = [part.strip() for part in line.strip().split("|")]
-                if len(parts) >= 1:
-                    data["app_ram_avg"] = parse_optional_float(segment_value(parts[0]))
-                if len(parts) >= 2:
-                    data["app_ram_peak"] = parse_optional_float(segment_value(parts[1]))
+            elif line.startswith("Max latency:"):
+                data["lat_max"] = parse_optional_float(line.split(":", 1)[1])
 
-            elif "Idle CPU" in line:
-                data["idle_cpu"] = parse_optional_float(line.split(":", 1)[1])
+            elif line.startswith("Avg CPU:"):
+                data["cpu_avg"] = parse_optional_float(line.split(":", 1)[1])
 
-            elif "Idle RAM" in line:
-                data["idle_ram"] = parse_optional_float(line.split(":", 1)[1])
+            elif line.startswith("Peak CPU:"):
+                data["cpu_peak"] = parse_optional_float(line.split(":", 1)[1])
 
-            elif "Idle App RAM" in line:
+            elif line.startswith("Avg RAM:"):
+                data["ram_avg"] = parse_optional_float(line.split(":", 1)[1])
+
+            elif line.startswith("Peak RAM:"):
+                data["ram_peak"] = parse_optional_float(line.split(":", 1)[1])
+
+            elif line.startswith("Idle RAM:"):
                 data["idle_app_ram"] = parse_optional_float(line.split(":", 1)[1])
 
-            elif "Disk util" in line:
-                parts = [part.strip() for part in line.strip().split("|")]
-                data["disk_util_avg"] = parse_optional_float(segment_value(parts[0]))
-                data["disk_util_peak"] = parse_optional_float(segment_value(parts[1]))
+            elif line.startswith("Avg Read:"):
+                data["disk_read_avg"] = parse_optional_float(line.split(":", 1)[1])
+
+            elif line.startswith("Avg Write:"):
+                data["disk_write_avg"] = parse_optional_float(line.split(":", 1)[1])
 
     return data
 
@@ -212,23 +208,17 @@ def print_summary(avg, std):
 
         print(f"Max Latency  : {avg.loc[test, 'lat_max']:.2f} ms")
 
-        print(f"CPU Usage    : {avg.loc[test, 'cpu_avg']:.2f}% (peak {avg.loc[test, 'cpu_peak']:.2f}%)")
-        print(f"Memory Usage : {avg.loc[test, 'ram_avg']:.2f} MB (peak {avg.loc[test, 'ram_peak']:.2f} MB)")
-
-        if "app_ram_avg" in avg.columns:
-            print(f"App RAM      : {avg.loc[test, 'app_ram_avg']:.2f} MB (peak {avg.loc[test, 'app_ram_peak']:.2f} MB)")
-
-        if "idle_cpu" in avg.columns:
-            print(f"Idle CPU     : {avg.loc[test, 'idle_cpu']:.2f}%")
-
-        if "idle_ram" in avg.columns:
-            print(f"Idle RAM     : {avg.loc[test, 'idle_ram']:.2f} MB")
+        print(f"App CPU      : {avg.loc[test, 'cpu_avg']:.2f}% (peak {avg.loc[test, 'cpu_peak']:.2f}%)")
+        print(f"App Memory   : {avg.loc[test, 'ram_avg']:.2f} MB (peak {avg.loc[test, 'ram_peak']:.2f} MB)")
 
         if "idle_app_ram" in avg.columns:
             print(f"Idle App RAM : {avg.loc[test, 'idle_app_ram']:.2f} MB")
 
-        if "disk_util_avg" in avg.columns:
-            print(f"Disk I/O     : {avg.loc[test, 'disk_util_avg']:.2f}% avg util (peak {avg.loc[test, 'disk_util_peak']:.2f}%)")
+        if "disk_read_avg" in avg.columns:
+            print(f"Disk Read    : {avg.loc[test, 'disk_read_avg']:.2f} KB/s")
+
+        if "disk_write_avg" in avg.columns:
+            print(f"Disk Write   : {avg.loc[test, 'disk_write_avg']:.2f} KB/s")
 
         print("")
 
